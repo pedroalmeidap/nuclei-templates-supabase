@@ -1,6 +1,6 @@
 # Nuclei Templates — Supabase RLS Misconfiguration
 
-Templates para detectar misconfigurações de Row Level Security (RLS) em instâncias Supabase expostas via anon key.
+Templates para detectar configurações de Row Level Security (RLS) em instâncias Supabase expostas via anon key.
 
 ## Contexto
 
