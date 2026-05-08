@@ -1,0 +1,79 @@
+id: supabase-anon-key-data-exposure
+
+info:
+  name: Supabase - Exposição de Dados via Anon Key (RLS misconfiguration)
+  author: security-research
+  severity: high
+  description: |
+    Detecta tabelas Supabase acessíveis publicamente via anon key devido a
+    políticas RLS permissivas (USING (true)) ou RLS desabilitado.
+    A anon key é pública por design, mas dados sensíveis nunca devem ser
+    retornados sem autenticação adequada.
+  remediation: |
+    1. Habilite RLS em todas as tabelas: ALTER TABLE <tabela> ENABLE ROW LEVEL SECURITY;
+    2. Remova políticas com USING (true) que expõem todos os registros.
+    3. Crie políticas que isolem dados por tenant/usuário autenticado.
+  reference:
+    - https://supabase.com/docs/guides/database/postgres/row-level-security
+  tags: supabase,rls,baas,saas,exposure,misconfiguration
+
+variables:
+  # Anon key capturada nos bundles JS do frontend (pública por design)
+  anon_key: "{{anon_key}}"
+  # URL da instância Supabase (ex: https://abcxyz.supabase.co)
+  supabase_url: "{{supabase_url}}"
+
+http:
+  - method: GET
+    path:
+      - "{{supabase_url}}/rest/v1/{{table}}?select=*&limit=1"
+
+    headers:
+      apikey: "{{anon_key}}"
+      Authorization: "Bearer {{anon_key}}"
+      Accept: application/json
+
+    payloads:
+      table:
+        - file: wordlists/saas-tables-pt.txt
+
+    attack: batteringram
+
+    matchers-condition: and
+    matchers:
+      # Retornou dados (não array vazio)
+      - type: word
+        part: body
+        words:
+          - '"id"'
+        condition: and
+
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: header
+        words:
+          - "application/json"
+
+      # Exclui respostas vazias
+      - type: word
+        part: body
+        words:
+          - "[]"
+        negative: true
+
+    extractors:
+      - type: regex
+        name: exposed_table
+        part: header
+        regex:
+          - 'Content-Range: \*/(\d+)'
+        group: 1
+
+      - type: json
+        name: sample_fields
+        part: body
+        json:
+          - "$[0] | keys"

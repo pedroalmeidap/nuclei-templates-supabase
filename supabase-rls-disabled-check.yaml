@@ -1,0 +1,67 @@
+id: supabase-rls-disabled-check
+
+info:
+  name: Supabase - Tabela sem RLS Habilitado (acesso irrestrito via REST)
+  author: security-research
+  severity: high
+  description: |
+    Quando RLS está desabilitado em uma tabela Supabase, qualquer requisição
+    autenticada com a anon key consegue ler TODOS os registros sem restrição.
+    Diferente da policy USING (true), aqui não existe nenhuma barreira —
+    nem mesmo uma policy vazia bloqueia o acesso.
+  remediation: |
+    Execute para todas as tabelas públicas:
+    ALTER TABLE <tabela> ENABLE ROW LEVEL SECURITY;
+
+    Para auditar o estado atual:
+    SELECT tablename, rowsecurity
+    FROM pg_tables
+    WHERE schemaname = 'public' AND rowsecurity = false;
+  tags: supabase,rls,misconfiguration,baas
+
+variables:
+  anon_key: "{{anon_key}}"
+  supabase_url: "{{supabase_url}}"
+
+http:
+  - method: GET
+    path:
+      - "{{supabase_url}}/rest/v1/{{table}}?select=count"
+
+    headers:
+      apikey: "{{anon_key}}"
+      Authorization: "Bearer {{anon_key}}"
+      Accept: application/json
+      Prefer: count=exact
+
+    payloads:
+      table:
+        - file: wordlists/saas-tables-pt.txt
+
+    attack: batteringram
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      # Content-Range presente indica que a tabela existe e retornou contagem
+      - type: regex
+        part: header
+        regex:
+          - "Content-Range: \\*/[1-9][0-9]*"
+
+      - type: word
+        part: body
+        words:
+          - "[]"
+        negative: true
+
+    extractors:
+      - type: regex
+        name: record_count
+        part: header
+        regex:
+          - "Content-Range: \\*/(\\d+)"
+        group: 1

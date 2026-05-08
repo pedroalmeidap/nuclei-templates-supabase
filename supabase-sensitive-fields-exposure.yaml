@@ -1,0 +1,84 @@
+id: supabase-sensitive-fields-exposure
+
+info:
+  name: Supabase - Campos Sensíveis Expostos via Anon Key
+  author: security-research
+  severity: critical
+  description: |
+    Detecta exposição de campos especificamente sensíveis em tabelas Supabase
+    acessíveis via anon key: dados de pagamento (Stripe), PII, credenciais,
+    e dados financeiros. Indica RLS misconfiguration de alto impacto.
+  remediation: |
+    1. Remova imediatamente políticas RLS com USING (true) nas tabelas afetadas.
+    2. Tabelas com dados de pagamento (stripe_customer_id, stripe_subscription_id)
+       nunca devem ser acessíveis via anon key.
+    3. Audite todas as tabelas com: SELECT tablename, rowsecurity FROM pg_tables
+       WHERE schemaname = 'public';
+  reference:
+    - https://supabase.com/docs/guides/database/postgres/row-level-security
+  tags: supabase,rls,stripe,pii,payment,exposure,critical
+
+variables:
+  anon_key: "{{anon_key}}"
+  supabase_url: "{{supabase_url}}"
+
+http:
+  - method: GET
+    path:
+      - "{{supabase_url}}/rest/v1/{{table}}?select=*&limit=3"
+
+    headers:
+      apikey: "{{anon_key}}"
+      Authorization: "Bearer {{anon_key}}"
+      Accept: application/json
+
+    payloads:
+      table:
+        - file: wordlists/saas-tables-pt.txt
+
+    attack: batteringram
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - "[]"
+        negative: true
+
+      # Campos sensíveis conhecidos — qualquer um confirma exposição crítica
+      - type: word
+        part: body
+        words:
+          # Stripe / pagamento
+          - "stripe_customer_id"
+          - "stripe_subscription_id"
+          - "stripe_price_id"
+          - "card_last4"
+          - "payment_method"
+          # Plano / negócio
+          - "plan_status"
+          - "trial_ends_at"
+          # PII
+          - "cpf"
+          - "birth_date"
+          - "consent_ip"
+          # Autenticação / internos
+          - "is_superadmin"
+          - "service_role"
+          - "webhook_secret"
+          - "commission_rate"
+          - "referral_mentor_id"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: matched_field
+        part: body
+        regex:
+          - '"(stripe_customer_id|stripe_subscription_id|cpf|birth_date|is_superadmin|commission_rate|trial_ends_at|consent_ip)"'
+        group: 1
